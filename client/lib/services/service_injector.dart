@@ -228,8 +228,6 @@ class _MockWebSocketService implements WebSocketService {
 
 class _MockRtcService implements RtcService {
   final _controller = StreamController<RtcEvent>.broadcast();
-  bool _isMuted = false;
-  bool _isSpeakerOn = false;
 
   @override
   Future<void> joinRoom(String token, String roomName) async {
@@ -244,13 +242,11 @@ class _MockRtcService implements RtcService {
 
   @override
   void setMuted(bool muted) {
-    _isMuted = muted;
     debugPrint('静音: $muted');
   }
 
   @override
   void setSpeakerOn(bool on) {
-    _isSpeakerOn = on;
     debugPrint('免提: $on');
   }
 

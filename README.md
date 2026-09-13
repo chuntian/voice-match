@@ -15,7 +15,7 @@ VoiceMatch 是一款一对一实时语音匹配社交应用：用户进入匹配
 
 | 层 | 技术 |
 |---|---|
-| 客户端 | Flutter 3.22 / Dart 3.0 |
+| 客户端 | Flutter >= 3.10 / Dart >= 3.0 |
 | 服务端 | Go 1.22 / Gin / gorilla/websocket |
 | RTC | LiveKit (自托管 WebRTC SFU) |
 | 数据库 | MySQL 8.0 / Redis 7 |
@@ -49,8 +49,10 @@ VoiceMatch 是一款一对一实时语音匹配社交应用：用户进入匹配
 
 | 工具 | 版本 |
 |---|---|
-| Flutter SDK | >= 3.22.0 |
+| Flutter SDK | >= 3.10.0 |
 | Go | >= 1.22 |
+| Xcode | >= 15（iOS 开发，含 CocoaPods） |
+| Android SDK | >= 34（Android 开发） |
 | Docker | >= 24.0 |
 | Docker Compose | >= 2.20 |
 | Node.js (LiveKit CLI) | >= 18 |
@@ -71,9 +73,9 @@ docker-compose up -d
 ### 2. 启动服务端
 
 ```bash
-cd server
-go run ./cmd/signal &
-go run ./cmd/match &
+# 在项目根目录执行（go.mod 位于根目录）
+go run ./server/cmd/signal &
+go run ./server/cmd/match &
 ```
 
 ### 3. 启动客户端
@@ -95,11 +97,12 @@ flutter run
 voice-match/
 ├── client/                 # Flutter 客户端
 │   ├── lib/
-│   │   ├── models/         # 数据模型 (User, Preferences, CallRecord)
-│   │   ├── services/       # 服务层 (WebSocket, RTC, API, Match, CallKit)
-│   │   ├── pages/          # 页面 (Login, Home, MatchWaiting, Call, Profile)
+│   │   ├── models/         # 数据模型 (User, Preferences, CallRecord, BlockedUser)
+│   │   ├── services/       # 服务层 (WebSocket, RTC, API, Match, CallKit, ServiceInjector)
+│   │   ├── pages/          # 页面 (Login, Home, MatchSettings, MatchWaiting, Call, End, Profile)
 │   │   ├── widgets/        # 通用组件
 │   │   ├── router/         # 路由
+│   │   ├── theme/          # 主题与颜色常量
 │   │   └── main.dart       # 入口
 │   ├── ios/                # iOS 原生配置 (CallKit, PushKit)
 │   ├── android/            # Android 原生配置 (ConnectionService)
@@ -109,24 +112,29 @@ voice-match/
 │   │   ├── signal/         # 信令服务入口
 │   │   └── match/          # 匹配服务入口
 │   ├── internal/
-│   │   ├── signal/         # WebSocket 处理
+│   │   ├── signal/         # WebSocket 处理与通话状态机
 │   │   ├── match/          # 匹配引擎
 │   │   ├── user/           # 用户/认证/REST API
-│   │   ├── report/         # 举报
-│   │   └── store/          # Redis/MySQL 存储
+│   │   ├── report/         # 举报与拉黑
+│   │   └── store/          # 存储抽象与 Mock 实现
 │   └── pkg/push/           # APNs / FCM 推送
 ├── shared/                 # 共享协议定义
-│   ├── protocol/           # 消息模型 (Dart + Go)
-│   └── errors/             # 错误码 (Dart + Go)
+│   ├── lib/                # Dart 共享包 (protocol, errors)
+│   ├── protocol/           # 消息模型 (Go)
+│   ├── errors/             # 错误码 (Go)
+│   └── pubspec.yaml        # Dart 共享包配置
 ├── deploy/                 # Docker Compose 部署
 │   ├── docker-compose.yml
+│   ├── docker-compose.prod.yml
 │   ├── nginx/              # Nginx 配置
 │   └── redis/              # Redis 配置
 ├── docs/                   # 项目文档
 │   ├── architecture.md
 │   ├── api.md
 │   ├── protocol.md
+│   ├── setup-livekit.md
 │   └── adr/                # 架构决策记录
+├── Makefile                # 常用开发命令 (build/test/lint/run)
 └── .github/workflows/      # CI/CD
     ├── client.yml
     ├── server.yml
@@ -155,8 +163,15 @@ type: feat | fix | docs | style | refactor | test | chore
 cd client && flutter test
 
 # 服务端
-cd server && go test ./... -v -race
+go test ./server/... ./shared/... -v
 ```
+
+> 也可以通过根目录 Makefile 快捷执行：
+> ```bash
+> make test-server   # Go 单元测试
+> make test-client   # Flutter 测试
+> make lint-server   # gofmt + go vet
+> ```
 
 ## 部署指南
 

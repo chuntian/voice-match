@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_button.dart';
 import '../widgets/common_avatar.dart';

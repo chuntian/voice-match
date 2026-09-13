@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
-import '../models/user.dart';
 import '../theme/app_theme.dart';
 import '../widgets/online_badge.dart';
 import '../router/app_router.dart';
@@ -21,7 +20,6 @@ class _HomePageState extends State<HomePage>
   int _currentIndex = 0;
   int _onlineCount = 1234;
   Timer? _onlineTimer;
-  User? _currentUser;
 
   late final TabController _tabController;
 
@@ -43,10 +41,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _loadUserData() async {
     try {
       final apiService = Provider.of<ApiService>(context, listen: false);
-      final user = await apiService.getProfile();
-      if (mounted) {
-        setState(() => _currentUser = user);
-      }
+      await apiService.getProfile();
     } catch (_) {
       // 忽略加载错误，使用默认值
     }

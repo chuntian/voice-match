@@ -18,8 +18,6 @@ class RealRtcService extends ChangeNotifier implements RtcService {
 
   final _eventsController = StreamController<RtcEvent>.broadcast();
 
-  bool _isMuted = false;
-
   @override
   Stream<RtcEvent> get events => _eventsController.stream;
 
@@ -89,7 +87,6 @@ class RealRtcService extends ChangeNotifier implements RtcService {
       await room.dispose();
     }
 
-    _isMuted = false;
     _eventsController.add(RtcEvent.disconnected());
     notifyListeners();
   }
@@ -100,7 +97,6 @@ class RealRtcService extends ChangeNotifier implements RtcService {
 
   @override
   void setMuted(bool muted) {
-    _isMuted = muted;
     final participant = _room?.localParticipant;
     if (participant != null) {
       participant.setMicrophoneEnabled(!muted);
