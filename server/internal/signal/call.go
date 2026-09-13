@@ -1,12 +1,19 @@
 package signal
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 )
+
+// CallStore abstracts Redis call-state persistence for the signal layer.
+type CallStore interface {
+	HSetCall(ctx context.Context, callID string, values map[string]interface{}) error
+	HDelCall(ctx context.Context, callID string) error
+}
 
 // CallState represents the state of a call.
 type CallState string
@@ -20,23 +27,25 @@ const (
 
 // CallSession holds all runtime information for a single call.
 type CallSession struct {
-	CallID        string
-	CallerID      string
-	CalleeID      string
-	State         CallState
-	RoomName      string
-	RtcToken      string
-	StartTime     time.Time
-	CreatedAt     time.Time
+	CallID    string
+	CallerID  string
+	CalleeID  string
+	State     CallState
+	RoomName  string
+	RtcToken  string
+	StartTime time.Time
+	CreatedAt time.Time
 
-	mu            sync.Mutex
-	ringTimer     *time.Timer
+	mu        sync.Mutex
+	ringTimer *time.Timer
 }
 
 // CallManager tracks all active calls and enforces the state machine.
 type CallManager struct {
-	mu      sync.RWMutex
-	calls   map[string]*CallSession // callID -> session
+	mu    sync.RWMutex
+	calls map[string]*CallSession // callID -> session
+
+	callStore CallStore
 
 	// onRingTimeout is invoked when a ringing call times out without
 	// being answered. The handler should notify both parties.
@@ -47,9 +56,11 @@ type CallManager struct {
 }
 
 // NewCallManager creates a CallManager with default settings.
-func NewCallManager() *CallManager {
+// If callStore is nil, Redis persistence is skipped (test only).
+func NewCallManager(callStore CallStore) *CallManager {
 	return &CallManager{
 		calls:               make(map[string]*CallSession),
+		callStore:           callStore,
 		ringTimeoutDuration: 30 * time.Second,
 	}
 }
@@ -62,6 +73,26 @@ func (cm *CallManager) SetRingTimeoutDuration(d time.Duration) {
 // SetOnRingTimeout registers the callback for ring timeouts.
 func (cm *CallManager) SetOnRingTimeout(fn func(callID string)) {
 	cm.onRingTimeout = fn
+}
+
+// persistCall writes the call session fields to Redis. Safe to call with
+// a nil callStore (no-op) so tests can construct a CallManager without Redis.
+func (cm *CallManager) persistCall(ctx context.Context, sess *CallSession) {
+	if cm.callStore == nil {
+		return
+	}
+	values := map[string]interface{}{
+		"caller_id":  sess.CallerID,
+		"callee_id":  sess.CalleeID,
+		"state":      string(sess.State),
+		"room_name":  sess.RoomName,
+		"rtc_token":  sess.RtcToken,
+		"start_time": sess.StartTime.Unix(),
+		"created_at": sess.CreatedAt.Unix(),
+	}
+	if err := cm.callStore.HSetCall(ctx, sess.CallID, values); err != nil {
+		log.Printf("[call] warn: persist call %s failed: %v", sess.CallID, err)
+	}
 }
 
 // Invite creates a new call session in ringing state.
@@ -107,6 +138,9 @@ func (cm *CallManager) Invite(callID, callerID, calleeID, roomName, rtcToken str
 	})
 	sess.mu.Unlock()
 
+	// Persist to Redis before making the call visible in memory.
+	cm.persistCall(context.Background(), sess)
+
 	cm.calls[callID] = sess
 	log.Printf("[call] invite callID=%s caller=%s callee=%s", callID, callerID, calleeID)
 	return sess, nil
@@ -139,6 +173,7 @@ func (cm *CallManager) Accept(callID, userID string) (*CallSession, error) {
 		sess.ringTimer = nil
 	}
 
+	cm.persistCall(context.Background(), sess)
 	log.Printf("[call] accept callID=%s user=%s", callID, userID)
 	return sess, nil
 }
@@ -169,6 +204,7 @@ func (cm *CallManager) Reject(callID, userID, reason string) (*CallSession, erro
 		sess.ringTimer = nil
 	}
 
+	cm.persistCall(context.Background(), sess)
 	log.Printf("[call] reject callID=%s user=%s reason=%s", callID, userID, reason)
 	return sess, nil
 }
@@ -196,6 +232,7 @@ func (cm *CallManager) Cancel(callID, reason string) error {
 		sess.ringTimer = nil
 	}
 
+	cm.persistCall(context.Background(), sess)
 	log.Printf("[call] cancel callID=%s reason=%s", callID, reason)
 	return nil
 }
@@ -220,6 +257,7 @@ func (cm *CallManager) End(callID, userID string, reason string) (*CallSession, 
 	sess.State = CallStateEnded
 	duration := int(time.Since(sess.StartTime).Seconds())
 
+	cm.persistCall(context.Background(), sess)
 	log.Printf("[call] end callID=%s user=%s duration=%ds reason=%s", callID, userID, duration, reason)
 	return sess, duration, nil
 }
@@ -251,8 +289,14 @@ func (cm *CallManager) GetByUser(userID string) (*CallSession, bool) {
 // participants have been notified and the call is fully cleaned up.
 func (cm *CallManager) Remove(callID string) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 	delete(cm.calls, callID)
+	cm.mu.Unlock()
+
+	if cm.callStore != nil {
+		if err := cm.callStore.HDelCall(context.Background(), callID); err != nil {
+			log.Printf("[call] warn: delete call %s from store failed: %v", callID, err)
+		}
+	}
 }
 
 // Count returns the number of active (non-ended) calls.

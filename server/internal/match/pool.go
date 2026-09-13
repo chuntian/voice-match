@@ -37,6 +37,15 @@ type PoolStore interface {
 
 	// SIsBlacklist checks if targetUser is in the blocker's blacklist set.
 	SIsBlacklist(ctx context.Context, blockerID, targetUser string) (bool, error)
+
+	// ListPools returns all active pool keys matching match:pool:*
+	ListPools(ctx context.Context) ([]string, error)
+	// SetUserPool records which pool a user joined (Redis hash match:userpool:{userID}, field "pool")
+	SetUserPool(ctx context.Context, userID, poolKey string) error
+	// GetUserPool returns the pool key a user is currently in, "" if none
+	GetUserPool(ctx context.Context, userID string) (string, error)
+	// DelUserPool removes the user->pool mapping
+	DelUserPool(ctx context.Context, userID string) error
 }
 
 // NotificationSink is called when a match is found. The signal layer
@@ -103,6 +112,12 @@ func (m *Matcher) JoinPool(userID, matchType, city, geohash, destination string,
 		return 0, 0, fmt.Errorf("lpush pool: %w", err)
 	}
 
+	// Record which pool this user joined so we can later remove them
+	// from the correct list (city/dest pools are discovered dynamically).
+	if err := m.store.SetUserPool(ctx, userID, key); err != nil {
+		log.Printf("[match] warn: record user pool failed for %s: %v", userID, err)
+	}
+
 	expireAt := time.Now().Add(m.poolTTL).Unix()
 	if err := m.store.ZAddPoolTimeout(ctx, userID, expireAt); err != nil {
 		log.Printf("[match] warn: set pool timeout failed for %s: %v", userID, err)
@@ -116,21 +131,27 @@ func (m *Matcher) JoinPool(userID, matchType, city, geohash, destination string,
 	return int(size), waitTime, nil
 }
 
-// LeavePool removes a user from all matching pools.
+// LeavePool removes a user from all matching pools. The matchType argument
+// is ignored: the actual pool is located via the user->pool mapping so that
+// city/destination pools are removed correctly.
 func (m *Matcher) LeavePool(userID, matchType string) error {
 	ctx := context.Background()
 
-	// Remove from all three pool types.
-	keys := []string{
-		"match:pool:random",
-		// city/dest keys are dynamic; we remove from all possible
-		// keys by scanning. For simplicity we remove from the known
-		// prefixes. In production use a set of user->pool mapping.
+	// Locate the pool the user actually joined via the user->pool mapping.
+	if poolKey, err := m.store.GetUserPool(ctx, userID); err == nil && poolKey != "" {
+		if _, lerr := m.store.LRemPool(ctx, poolKey, userID); lerr != nil {
+			log.Printf("[match] warn: lrem user %s from %s failed: %v", userID, poolKey, lerr)
+		}
+		if derr := m.store.DelUserPool(ctx, userID); derr != nil {
+			log.Printf("[match] warn: del user pool mapping for %s failed: %v", userID, derr)
+		}
+	} else if err != nil {
+		log.Printf("[match] warn: get user pool for %s failed: %v", userID, err)
 	}
 
-	for _, key := range keys {
-		_, _ = m.store.LRemPool(ctx, key, userID)
-	}
+	// Best-effort fallback: also remove from the random pool in case the
+	// mapping was lost or never recorded.
+	_, _ = m.store.LRemPool(ctx, "match:pool:random", userID)
 
 	// Also remove from timeout set.
 	_ = m.store.ZRemPoolTimeout(ctx, userID)
@@ -181,19 +202,18 @@ func (m *Matcher) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
 
-	pools := []string{
-		"match:pool:random",
-		// City and destination pools are discovered dynamically.
-		// For simplicity we poll the random pool here; city/dest
-		// pools can be added by extending the pool list dynamically.
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			for _, poolKey := range pools {
+			// Discover all active pools dynamically (random, city:*, dest:*).
+			poolKeys, err := m.store.ListPools(ctx)
+			if err != nil {
+				log.Printf("[match] list pools error: %v", err)
+				continue
+			}
+			for _, poolKey := range poolKeys {
 				m.matchOneFromPool(ctx, poolKey)
 			}
 		}
@@ -272,10 +292,14 @@ func (m *Matcher) timeoutLoop(ctx context.Context) {
 			}
 			for _, userID := range expired {
 				log.Printf("[match] pool timeout evict user=%s", userID)
-				// Remove from all pools (best-effort).
-				for _, key := range []string{"match:pool:random"} {
-					_, _ = m.store.LRemPool(ctx, key, userID)
+				// Locate the pool the user was actually in via the
+				// user->pool mapping, and remove them from it.
+				if poolKey, gerr := m.store.GetUserPool(ctx, userID); gerr == nil && poolKey != "" {
+					_, _ = m.store.LRemPool(ctx, poolKey, userID)
+					_ = m.store.DelUserPool(ctx, userID)
 				}
+				// Best-effort fallback: also remove from the random pool.
+				_, _ = m.store.LRemPool(ctx, "match:pool:random", userID)
 				_ = m.store.ZRemPoolTimeout(ctx, userID)
 			}
 		}

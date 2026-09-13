@@ -17,6 +17,7 @@ type mockPoolStore struct {
 	pools       map[string][]string           // poolKey -> list
 	timeouts    map[string]int64               // userID -> expireAt (score)
 	blacklists  map[string]map[string]bool     // blocker -> set of targets
+	userPools   map[string]string              // userID -> poolKey
 	lpopErrors  map[string]error
 	lpushErrors map[string]error
 }
@@ -26,6 +27,7 @@ func newMockPoolStore() *mockPoolStore {
 		pools:      make(map[string][]string),
 		timeouts:   make(map[string]int64),
 		blacklists: make(map[string]map[string]bool),
+		userPools:  make(map[string]string),
 	}
 }
 
@@ -110,6 +112,36 @@ func (m *mockPoolStore) SIsBlacklist(_ context.Context, blockerID, targetUser st
 		return set[targetUser], nil
 	}
 	return false, nil
+}
+
+func (m *mockPoolStore) ListPools(_ context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []string
+	for key := range m.pools {
+		result = append(result, key)
+	}
+	return result, nil
+}
+
+func (m *mockPoolStore) SetUserPool(_ context.Context, userID, poolKey string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.userPools[userID] = poolKey
+	return nil
+}
+
+func (m *mockPoolStore) GetUserPool(_ context.Context, userID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.userPools[userID], nil
+}
+
+func (m *mockPoolStore) DelUserPool(_ context.Context, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.userPools, userID)
+	return nil
 }
 
 // ---- Mock sink ----
@@ -229,6 +261,40 @@ func TestMatcher_BlacklistSkips(t *testing.T) {
 			t.Fatalf("blacklisted pair should not match: %+v", mr)
 		}
 	}
+}
+
+func TestMatcher_CityPoolDynamicallyDiscovered(t *testing.T) {
+	store := newMockPoolStore()
+	sink := &mockSink{}
+	m := NewMatcher(store, sink)
+	m.SetPollInterval(50 * time.Millisecond)
+
+	// Two users join the city pool (geohash="u123456" -> match:pool:city:u123).
+	_, _, _ = m.JoinPool("alice", "city", "hangzhou", "u123456", "", nil, "any")
+	_, _, _ = m.JoinPool("bob", "city", "hangzhou", "u123456", "", nil, "any")
+
+	// Both users should be recorded in the user->pool mapping.
+	store.mu.Lock()
+	assert.Equal(t, "match:pool:city:u123", store.userPools["alice"])
+	assert.Equal(t, "match:pool:city:u123", store.userPools["bob"])
+	store.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Start(ctx)
+	defer m.Stop()
+
+	// Wait for the city pool to be discovered and matched.
+	require.Eventually(t, func() bool {
+		return sink.count() >= 1
+	}, 500*time.Millisecond, 20*time.Millisecond)
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	require.Len(t, sink.matches, 1)
+	assert.Equal(t, "alice", sink.matches[0].userA)
+	assert.Equal(t, "bob", sink.matches[0].userB)
+	assert.Contains(t, sink.matches[0].matchType, "city:")
 }
 
 func TestMatcher_PoolKeyFor_City(t *testing.T) {

@@ -23,6 +23,7 @@ const (
 	keyPoolDestPrefix  = "match:pool:dest:"
 	keyBlacklistPrefix = "user:blacklist:"
 	keyPoolTimeoutZSet = "match:pool:timeout"
+	keyUserPoolPrefix  = "match:userpool:"
 )
 
 // ---- Interfaces ----
@@ -228,6 +229,50 @@ func (r *RedisStore) ZRangeByScoreTimeout(ctx context.Context, maxScore int64) (
 		return nil, fmt.Errorf("zrange timeout: %w", err)
 	}
 	return vals, nil
+}
+
+// ListPools returns all active pool keys matching match:pool:*
+func (r *RedisStore) ListPools(ctx context.Context) ([]string, error) {
+	keys, err := r.client.Keys(ctx, "match:pool:*").Result()
+	if err != nil {
+		return nil, fmt.Errorf("list pools: %w", err)
+	}
+	return keys, nil
+}
+
+// SetUserPool records which pool a user joined as a hash field under
+// match:userpool:{userID}, with a 10-minute TTL to avoid orphan records.
+func (r *RedisStore) SetUserPool(ctx context.Context, userID, poolKey string) error {
+	key := keyUserPoolPrefix + userID
+	if err := r.client.HSet(ctx, key, "pool", poolKey).Err(); err != nil {
+		return fmt.Errorf("hset user pool: %w", err)
+	}
+	if err := r.client.Expire(ctx, key, 10*time.Minute).Err(); err != nil {
+		return fmt.Errorf("expire user pool: %w", err)
+	}
+	return nil
+}
+
+// GetUserPool returns the pool key a user is currently in, "" if none.
+func (r *RedisStore) GetUserPool(ctx context.Context, userID string) (string, error) {
+	key := keyUserPoolPrefix + userID
+	val, err := r.client.HGet(ctx, key, "pool").Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("hget user pool: %w", err)
+	}
+	return val, nil
+}
+
+// DelUserPool removes the user->pool mapping.
+func (r *RedisStore) DelUserPool(ctx context.Context, userID string) error {
+	key := keyUserPoolPrefix + userID
+	if err := r.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("del user pool: %w", err)
+	}
+	return nil
 }
 
 // ---- BlacklistStore implementation ----

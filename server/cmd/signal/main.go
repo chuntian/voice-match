@@ -33,9 +33,10 @@ import (
 // ---- Config ----
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Redis    RedisConfig    `yaml:"redis"`
-	MySQL    MySQLConfig    `yaml:"mysql"`
+	Server ServerConfig `yaml:"server"`
+	Redis  RedisConfig  `yaml:"redis"`
+	MySQL  MySQLConfig  `yaml:"mysql"`
+	JWT    JWTConfig    `yaml:"jwt"`
 }
 
 type ServerConfig struct {
@@ -52,10 +53,16 @@ type MySQLConfig struct {
 	DSN string `yaml:"dsn"`
 }
 
+type JWTConfig struct {
+	Secret      string `yaml:"secret"`
+	ExpireHours int    `yaml:"expire_hours"`
+}
+
 func loadConfig(path string) (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{Addr: ":8080"},
 		Redis:  RedisConfig{Addr: "localhost:6379", DB: 0},
+		JWT:    JWTConfig{Secret: "dev-secret-change-me", ExpireHours: 168},
 	}
 
 	data, err := os.ReadFile(path)
@@ -152,7 +159,7 @@ func main() {
 
 	// Initialize core components.
 	hub := signal.NewHub()
-	calls := signal.NewCallManager()
+	calls := signal.NewCallManager(redisStore)
 	hub.StartHeartbeatWatcher()
 
 	users := &stubUserValidator{}
@@ -190,7 +197,7 @@ func main() {
 		calls.Remove(callID)
 	})
 
-	handler := signal.NewHandler(hub, calls, users, matchService, rtc)
+	handler := signal.NewHandler(hub, calls, users, matchService, rtc, cfg.JWT.Secret)
 
 	// HTTP routes.
 	mux := http.NewServeMux()
@@ -201,10 +208,10 @@ func main() {
 	})
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		stats := map[string]interface{}{
-			"online":   hub.OnlineCount(),
-			"calls":    calls.Count(),
+			"online":    hub.OnlineCount(),
+			"calls":     calls.Count(),
 			"goroutine": runtime.NumGoroutine(),
-			"uptime":   time.Since(startTime).Seconds(),
+			"uptime":    time.Since(startTime).Seconds(),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(stats)

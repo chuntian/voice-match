@@ -2,17 +2,27 @@ package signal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 
 	apperrors "github.com/voicematch/voice-match/shared/errors"
 	"github.com/voicematch/voice-match/shared/protocol"
 )
+
+// jwtClaims is the JWT payload we parse on the signal edge. It mirrors
+// server/internal/user/service.go tokenClaims so we can extract the uid
+// claim without importing the user service (avoids circular dependency).
+type jwtClaims struct {
+	UserID string `json:"uid"`
+	jwt.RegisteredClaims
+}
 
 // UserValidator abstracts the user service so the signal package does
 // not import it directly (avoids circular dependency).
@@ -36,11 +46,12 @@ type RTCService interface {
 
 // Handler holds dependencies for the WebSocket message handler.
 type Handler struct {
-	hub      *Hub
-	calls    *CallManager
-	users    UserValidator
-	match    MatchService
-	rtc      RTCService
+	hub       *Hub
+	calls     *CallManager
+	users     UserValidator
+	match     MatchService
+	rtc       RTCService
+	jwtSecret string
 
 	// pendingHellos stores hello payloads keyed by temporary connection
 	// until authentication completes. We use a map keyed by conn pointer.
@@ -60,6 +71,7 @@ func NewHandler(
 	users UserValidator,
 	match MatchService,
 	rtc RTCService,
+	jwtSecret string,
 ) *Handler {
 	return &Handler{
 		hub:          hub,
@@ -67,6 +79,7 @@ func NewHandler(
 		users:        users,
 		match:        match,
 		rtc:          rtc,
+		jwtSecret:    jwtSecret,
 		pendingConns: make(map[*websocket.Conn]*pendingHello),
 	}
 }
@@ -79,9 +92,46 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// validateJWT parses and validates an HS256 JWT, returns the uid claim.
+func (h *Handler) validateJWT(tokenStr string) (string, error) {
+	claims := &jwtClaims{}
+	parsed, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(h.jwtSecret), nil
+	}, jwt.WithValidMethods([]string{"HS256"}))
+	if err != nil {
+		return "", err
+	}
+	if !parsed.Valid {
+		return "", errors.New("invalid token")
+	}
+	if claims.UserID == "" {
+		return "", errors.New("token missing uid")
+	}
+	return claims.UserID, nil
+}
+
 // ServeHTTP upgrades an HTTP request to WebSocket and handles the
 // connection lifecycle. This is the main entry point for /ws.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var authenticatedUserID string
+
+	// Prefer token from query parameter so we can reject with HTTP 401
+	// before upgrading to WebSocket.
+	if tokenStr := r.URL.Query().Get("token"); tokenStr != "" {
+		uid, err := h.validateJWT(tokenStr)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":401,"message":"invalid or expired token"}`))
+			return
+		}
+		authenticatedUserID = uid
+	}
+
+	// Upgrade WebSocket.
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[handler] upgrade failed: %v", err)
@@ -116,16 +166,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate token via user service.
-	valid, err := h.users.ValidateToken(hello.UserID, hello.Token)
-	if err != nil || !valid {
-		h.sendError(conn, apperrors.ErrInvalidToken, "invalid token", "")
-		_ = conn.Close()
-		return
+	// If no token was provided in the query string, fall back to the
+	// token field in the hello message.
+	if authenticatedUserID == "" {
+		uid, err := h.validateJWT(hello.Token)
+		if err != nil {
+			h.sendError(conn, apperrors.ErrInvalidToken, "invalid token", err.Error())
+			_ = conn.Close()
+			return
+		}
+		authenticatedUserID = uid
 	}
 
-	// Authentication succeeded.
-	client := NewClient(h.hub, conn, hello.UserID, hello.DeviceID)
+	// Authentication succeeded. Trust the uid claim from the JWT, not
+	// the userID field in the hello message.
+	client := NewClient(h.hub, conn, authenticatedUserID, hello.DeviceID)
 	h.hub.Register(client)
 	client.MarkAuthenticated()
 
@@ -136,7 +191,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[handler] user=%s connected", hello.UserID)
+	log.Printf("[handler] user=%s connected", authenticatedUserID)
 
 	// Set up message routing for this client.
 	h.hub.SetMessageHandler(func(userID string, raw []byte) {
