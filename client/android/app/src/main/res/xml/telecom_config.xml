@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Telecom configuration for flutter_callkit_incoming.
+    Declares the ConnectionService that the system Telecom framework binds to
+    when handling incoming/outgoing calls.
+-->
+<telecom-manager xmlns:android="http://schemas.android.com/apk/res/android">
+    <phone-account
+        android:id="@+id/connection_service_phone_account"
+        android:label="VoiceMatch"
+        android:scheme="tel" />
+</telecom-manager>

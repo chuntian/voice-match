@@ -1,0 +1,68 @@
+# ============================================================
+# Voice Match 服务端配置文件
+# 所有字段均可被同名环境变量覆盖（环境变量优先级更高，见 README）
+# ============================================================
+
+# ---------- HTTP 服务 ----------
+server:
+  port: 8080                # 监听端口
+  read_timeout: 10s         # HTTP 读超时（防慢连接）
+  write_timeout: 30s         # HTTP 写超时
+  idle_timeout: 120s         # 空闲连接超时
+  mode: release              # debug / release
+
+# ---------- Redis ----------
+redis:
+  addr: "redis:6379"        # Redis 地址（容器内服务名）
+  password: ""              # 密码，默认为空
+  db: 0                     # 数据库索引
+  pool_size: 50             # 连接池大小
+  min_idle_conns: 5         # 最小空闲连接
+
+# ---------- MySQL ----------
+mysql:
+  # DSN 格式：用户名:密码@tcp(主机:端口)/库名?parseTime=true&loc=Local
+  dsn: "voicematch:voicematch@tcp(mysql:3306)/voicematch?parseTime=true&loc=Local"
+  max_open_conns: 50        # 最大打开连接
+  max_idle_conns: 10        # 最大空闲连接
+  conn_max_lifetime: 30m    # 连接最大存活时间
+
+# ---------- JWT 会话 ----------
+jwt:
+  secret: "change-me-in-production"   # HMAC-SHA256 密钥，生产务必替换
+  expire_hours: 168                   # token 有效期（小时），7*24=168
+
+# ---------- Apple 登录 ----------
+apple:
+  team_id: "TEAMID1234"       # Apple Developer Team ID
+  key_id: "KEYID12345"        # Sign in with Apple 的 Key ID
+  private_key_path: "/secrets/AuthKey_KEYID12345.p8"  # .p8 私钥路径
+  client_id: "com.voicematch.app"  # 校验 identityToken 的 aud（Bundle/Service ID）
+
+# ---------- FCM（Android 推送） ----------
+fcm:
+  server_key: "your-fcm-server-key"  # FCM Legacy Server Key
+
+# ---------- APNs（iOS VoIP 推送） ----------
+apns:
+  key_id: "APNSKEY12"         # APNs Auth Key ID
+  team_id: "TEAMID1234"       # Team ID
+  private_key_path: "/secrets/AuthKey_APNSKEY12.p8"  # .p8 私钥路径
+  topic: "com.voicematch.app.voip"  # push topic（一般为 bundleID.voip）
+  sandbox: true               # true=开发环境沙箱，生产置 false
+
+# ---------- 匹配引擎 ----------
+match:
+  poll_interval_ms: 200      # 匹配轮询间隔（毫秒）
+  pool_timeout_seconds: 30   # 匹配池等待超时（秒）
+
+# ---------- 日志 ----------
+log:
+  level: info                 # debug / info / warn / error
+  format: json                # json / text
+
+# ---------- 业务开关 ----------
+app:
+  dev_mode: true              # 开发模式：短信验证码固定 888888，生产必须置 false
+  admin_ids:                  # 管理员用户 ID 列表（举报后台接口）
+    - "admin-001"

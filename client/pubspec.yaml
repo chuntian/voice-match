@@ -1,0 +1,33 @@
+name: voice_match
+description: 一对一语音连麦工具
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
+  http: ^1.1.0
+  web_socket_channel: ^2.4.0
+  livekit_client: ^1.5.4
+  flutter_callkit_incoming: ^2.0.1
+  intl: ^0.19.0
+  cached_network_image: ^3.3.0
+  voice_match_shared:
+    path: ../shared
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

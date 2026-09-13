@@ -1,0 +1,78 @@
+# Voice Match 本地 / 测试环境编排
+# 使用：docker-compose up -d
+
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: vm-redis
+    restart: unless-stopped
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./redis/redis.conf:/etc/redis/redis.conf:ro
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - voicematch-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mysql:
+    image: mysql:8.0
+    container_name: vm-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "rootpass"
+      MYSQL_DATABASE: "voicematch"
+      MYSQL_USER: "voicematch"
+      MYSQL_PASSWORD: "voicematch"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - voicematch-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  signal:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: vm-signal
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      VM_SERVER_PORT: "8080"
+      VM_REDIS_ADDR: "redis:6379"
+      VM_MYSQL_DSN: "voicematch:voicematch@tcp(mysql:3306)/voicematch?parseTime=true&loc=Local"
+      VM_JWT_SECRET: "dev-secret-change-me"
+      VM_APP_DEV_MODE: "true"
+      VM_LOG_LEVEL: "debug"
+    ports:
+      - "8080:8080"
+    networks:
+      - voicematch-net
+
+networks:
+  voicematch-net:
+    driver: bridge
+
+volumes:
+  redis-data:
+  mysql-data:

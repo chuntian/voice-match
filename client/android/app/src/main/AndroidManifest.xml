@@ -1,0 +1,89 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Voice / audio permissions -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Foreground service for ongoing call -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+
+    <!-- Bluetooth for headset -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
+    <!-- Notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Telecom ConnectionService (flutter_callkit_incoming requirement) -->
+    <uses-permission android:name="android.permission.BIND_TELECOM_CONNECTION_SERVICE" />
+
+    <!-- Feature declarations -->
+    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
+    <application
+        android:label="VoiceMatch"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Telecom ConnectionService required by flutter_callkit_incoming -->
+        <service
+            android:name="com.hiennv.flutter_callkit_incoming.FlutterCallkitIncomingConnectionService"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Callkit Incoming broadcast receivers -->
+        <receiver
+            android:name="com.hiennv.flutter_callkit_incoming.FlutterCallkitIncomingReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.hiennv.flutter_callkit_incoming.ACTION_CALL_ACCEPT" />
+                <action android:name="com.hiennv.flutter_callkit_incoming.ACTION_CALL_DECLINE" />
+                <action android:name="com.hiennv.flutter_callkit_incoming.ACTION_CALL_ENDED" />
+                <action android:name="com.hiennv.flutter_callkit_incoming.ACTION_CALL_TIMEOUT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Meta-data for LiveKit -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- Queries for Android 11+ package visibility -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+    </queries>
+
+</manifest>

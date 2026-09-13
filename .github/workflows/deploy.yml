@@ -1,0 +1,32 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_REGISTRY }}/voicematch-server:${{ github.ref_name }} ./server
+          docker push ${{ secrets.DOCKER_REGISTRY }}/voicematch-server:${{ github.ref_name }}
+
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/voicematch
+            docker-compose pull signal
+            docker-compose up -d signal

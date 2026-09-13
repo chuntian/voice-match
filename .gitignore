@@ -1,0 +1,60 @@
+# ===== Go =====
+/server/signal
+/server/match
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# ===== Flutter / Dart =====
+/client/build/
+/client/.dart_tool/
+/client/.flutter-plugins
+/client/.flutter-plugins-dependencies
+/client/.packages
+/client/.metadata
+/client/pubspec.lock
+/client/ios/Pods/
+/client/ios/.symlinks/
+/client/ios/Flutter/Flutter.framework
+/client/ios/Flutter/Flutter.podspec
+/client/ios/Runner.xcworkspace/xcuserdata/
+/client/ios/Runner.xcodeproj/xcuserdata/
+/client/android/.gradle/
+/client/android/local.properties
+/client/android/app/build/
+/client/android/build/
+/client/android/captures/
+/client/android/key.properties
+*.log
+
+# ===== Shared Dart package =====
+/shared/.dart_tool/
+/shared/pubspec.lock
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===== Environment / Secrets =====
+.env
+.env.local
+.env.*.local
+*.pem
+*.p8
+*.key
+secrets/
+
+# ===== Deploy =====
+/deploy/nginx/certs/
+/deploy/init.sql
+
+# ===== OS =====
+Thumbs.db

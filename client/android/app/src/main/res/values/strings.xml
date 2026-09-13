@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceMatch</string>
+
+    <!-- CallKit notification channel -->
+    <string name="notification_channel_name">VoiceMatch 来电</string>
+    <string name="notification_channel_description">接收语音通话邀请通知</string>
+    <string name="notification_importance">high</string>
+
+    <!-- Incoming call UI strings -->
+    <string name="text_accept">接听</string>
+    <string name="text_decline">挂断</string>
+</resources>

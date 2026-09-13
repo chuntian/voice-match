@@ -1,0 +1,76 @@
+name: Server CI
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - 'shared/**'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'shared/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test
+          MYSQL_DATABASE: voicematch
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Download Go modules
+        run: cd server && go mod tidy
+
+      - name: Vet
+        run: cd server && go vet ./...
+
+      - name: Run tests
+        run: cd server && go test ./... -v -race
+        env:
+          REDIS_ADDR: localhost:6379
+          MYSQL_DSN: root:test@tcp(localhost:3306)/voicematch?parseTime=true
+
+      - name: Build signal binary
+        run: cd server && go build -o /tmp/signal ./cmd/signal
+
+      - name: Build match binary
+        run: cd server && go build -o /tmp/match ./cmd/match
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t voicematch-server:${{ github.sha }} ./server
