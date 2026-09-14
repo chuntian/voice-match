@@ -113,6 +113,10 @@ class _MatchSettingsPageState extends State<MatchSettingsPage> {
     try {
       // 保存偏好
       final apiService = Provider.of<ApiService>(context, listen: false);
+      // Resolve the match service before any await so we don't touch the
+      // BuildContext across an async gap.
+      final matchService =
+          Provider.of<MatchService>(context, listen: false);
       final prefs = Preferences(
         matchType: _matchType,
         city: _matchType == 'city' ? _cityController.text.trim() : null,
@@ -125,8 +129,6 @@ class _MatchSettingsPageState extends State<MatchSettingsPage> {
       await apiService.updatePreferences(prefs);
 
       // 加入匹配池
-      final matchService =
-          Provider.of<MatchService>(context, listen: false);
       await matchService.joinPool(
         matchType: _matchType,
         city: _matchType == 'city' ? _cityController.text.trim() : null,

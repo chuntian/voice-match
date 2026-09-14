@@ -44,11 +44,11 @@ class RealRtcService extends ChangeNotifier implements RtcService {
     // Set up event listeners
     _roomEventSub = room.events.listen(_onRoomEvent);
 
-    final connectOptions = const ConnectOptions(
+    const connectOptions = ConnectOptions(
       autoSubscribe: true,
     );
 
-    final roomOptions = RoomOptions(
+    const roomOptions = RoomOptions(
       adaptiveStream: true,
       dynacast: true,
     );

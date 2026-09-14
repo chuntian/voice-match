@@ -46,8 +46,8 @@ class RealWebSocketService extends ChangeNotifier
 
   String? _token;
   String? _userId;
-  String _deviceId = '';
-  String _appVersion = '1.0.0';
+  final String _deviceId = '';
+  final String _appVersion = '1.0.0';
 
   static const Duration _heartbeatInterval = Duration(seconds: 15);
   static const Duration _heartbeatTimeout = Duration(seconds: 30);

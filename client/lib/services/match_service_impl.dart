@@ -84,7 +84,7 @@ class RealMatchService extends ChangeNotifier implements MatchService {
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
 
-    final leaveMsg = const shared.LeavePool();
+    const leaveMsg = shared.LeavePool();
     _ws.send(leaveMsg.toJson());
 
     _isInPool = false;
