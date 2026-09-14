@@ -1,5 +1,8 @@
 allprojects {
     repositories {
+        // China mainland mirrors first, then official repos as fallback.
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         google()
         mavenCentral()
     }
