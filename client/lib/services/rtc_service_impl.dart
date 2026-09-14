@@ -9,12 +9,17 @@ import 'rtc_service.dart';
 ///
 /// Wraps a LiveKit [Room] instance and emits [RtcEvent]s on the
 /// [events] broadcast stream.
+///
+/// Adapted to livekit_client v1.5.x: room events are consumed through
+/// `EventsListener`-style `CancelListenFunc` callbacks, the audio track kind
+/// is `TrackType.AUDIO` (uppercase, from `livekit_models.pb.dart`), remote
+/// track publications are reported via [TrackPublishedEvent], and connection
+/// quality is tracked via [ParticipantConnectionQualityUpdatedEvent].
 class RealRtcService extends ChangeNotifier implements RtcService {
   RealRtcService();
 
   Room? _room;
-  StreamSubscription<RoomEvent>? _roomEventSub;
-  StreamSubscription<RoomSignalEvent>? _signalEventSub;
+  CancelListenFunc? _roomEventSub;
 
   final _eventsController = StreamController<RtcEvent>.broadcast();
 
@@ -46,10 +51,6 @@ class RealRtcService extends ChangeNotifier implements RtcService {
     final roomOptions = RoomOptions(
       adaptiveStream: true,
       dynacast: true,
-      defaultAudioPublishOptions: const AudioPublishOptions(
-        destination: TrackPublishOptionsDestination.all,
-      ),
-      defaultCameraPublishOptions: const CameraPublishOptions(),
     );
 
     try {
@@ -70,10 +71,8 @@ class RealRtcService extends ChangeNotifier implements RtcService {
 
   @override
   Future<void> leaveRoom() async {
-    await _roomEventSub?.cancel();
+    _roomEventSub?.call();
     _roomEventSub = null;
-    await _signalEventSub?.cancel();
-    _signalEventSub = null;
 
     final room = _room;
     _room = null;
@@ -106,7 +105,7 @@ class RealRtcService extends ChangeNotifier implements RtcService {
 
   @override
   void setSpeakerOn(bool on) {
-    Hardware.setSpeakerphoneOn(on);
+    Hardware.instance.setSpeakerphoneOn(on);
     notifyListeners();
   }
 
@@ -127,41 +126,33 @@ class RealRtcService extends ChangeNotifier implements RtcService {
     } else if (event is ParticipantDisconnectedEvent) {
       final participant = event.participant;
       debugPrint('Remote participant left: ${participant.identity}');
+    } else if (event is ParticipantConnectionQualityUpdatedEvent) {
+      // LiveKit reports per-participant connection quality updates; map them
+      // to our coarse RtcQuality levels.
+      final quality = _mapLiveKitQuality(event.connectionQuality);
+      _eventsController.add(RtcEvent.qualityChange(quality));
     } else if (event is LocalTrackPublishedEvent) {
       final publication = event.publication;
-      if (publication.kind == TrackType.audio) {
-        _monitorAudioQuality(publication);
+      if (publication.kind == TrackType.AUDIO) {
+        debugPrint('Local audio track published');
       }
-    } else if (event is RemoteTrackPublishedEvent) {
+    } else if (event is TrackPublishedEvent) {
       final publication = event.publication;
-      if (publication.kind == TrackType.audio) {
-        _monitorAudioQuality(publication);
+      if (publication.kind == TrackType.AUDIO) {
+        debugPrint('Remote audio track published');
       }
     }
   }
 
-  void _monitorAudioQuality(TrackPublication publication) {
-    if (publication is LocalTrackPublication) {
-      // Monitor local track stats for quality changes
-      // LiveKit provides quality via TrackPublication.quality
-      final quality = _mapLiveKitQuality(publication.quality);
-      _eventsController.add(RtcEvent.qualityChange(quality));
-    } else if (publication is RemoteTrackPublication) {
-      final quality = _mapLiveKitQuality(publication.quality);
-      _eventsController.add(RtcEvent.qualityChange(quality));
-    }
-  }
-
-  RtcQuality _mapLiveKitQuality(RetrySchedule schedule) {
-    // Map LiveKit connection quality to our RtcQuality enum
-    switch (schedule) {
-      case RetrySchedule.fast:
+  /// Maps LiveKit [ConnectionQuality] to our [RtcQuality] enum.
+  RtcQuality _mapLiveKitQuality(ConnectionQuality quality) {
+    switch (quality) {
+      case ConnectionQuality.excellent:
+      case ConnectionQuality.good:
         return RtcQuality.good;
-      case RetrySchedule.normal:
-        return RtcQuality.fair;
-      case RetrySchedule.slow:
+      case ConnectionQuality.poor:
         return RtcQuality.poor;
-      case RetrySchedule.unknown:
+      case ConnectionQuality.unknown:
         return RtcQuality.unknown;
     }
   }
