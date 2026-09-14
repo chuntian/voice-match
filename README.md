@@ -129,7 +129,9 @@ voice-match/
 │   ├── nginx/              # Nginx 配置
 │   └── redis/              # Redis 配置
 ├── docs/                   # 项目文档
-│   ├── architecture.md
+│   ├── design-philosophy.md    # 设计思想（红线、取舍、成本、扩展）
+│   ├── architecture.md         # 系统架构（总览、模块、数据流）
+│   ├── architecture-deep-dive.md # 架构思想深入（状态机、并发、匹配、扩展路径）
 │   ├── api.md
 │   ├── protocol.md
 │   ├── setup-livekit.md
@@ -172,6 +174,18 @@ go test ./server/... ./shared/... -v
 > make test-client   # Flutter 测试
 > make lint-server   # gofmt + go vet
 > ```
+
+## 文档导航
+
+| 文档 | 内容 |
+|------|------|
+| [docs/design-philosophy.md](docs/design-philosophy.md) | **设计思想**：两条红线、金字塔决策模型、核心取舍案例、成本哲学、扩展触发机制 |
+| [docs/architecture.md](docs/architecture.md) | **系统架构**：总览图、模块职责、匹配/通话数据流、技术选型理由 |
+| [docs/architecture-deep-dive.md](docs/architecture-deep-dive.md) | **架构思想深入**：分层思想、状态机、并发模型、匹配引擎、可靠性、扩展路径 |
+| [docs/api.md](docs/api.md) | REST API 文档 |
+| [docs/protocol.md](docs/protocol.md) | WebSocket 信令协议 |
+| [docs/setup-livekit.md](docs/setup-livekit.md) | LiveKit 注册与配置指引 |
+| [docs/adr/](docs/adr/) | 架构决策记录（技术栈/RTC/信令） |
 
 ## 部署指南
 
